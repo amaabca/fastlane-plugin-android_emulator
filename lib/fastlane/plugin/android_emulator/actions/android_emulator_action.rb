@@ -18,18 +18,29 @@ module Fastlane
 
         UI.message("Creating new emulator")
         FastlaneCore::CommandExecutor.execute(
-          command: "#{sdk_dir}/tools/bin/avdmanager create avd -n '#{params[:name]}' -f -k '#{params[:package]}' -d 'Nexus 5'",
+          command: "#{sdk_dir}/tools/bin/avdmanager create avd -n '#{params[:name]}' -f -k '#{params[:package]}' -d '#{params[:device]}'",
           print_all: true,
           print_command: false
         )
 
-        UI.message("Override configuration")
-        open("#{Dir.home}/.android/avd/#{params[:name]}.avd/config.ini", 'a') { |f|
-          f << "hw.gpu.mode=auto\n"
-          f << "hw.gpu.enabled=yes\n"
-          f << "skin.dynamic=yes\n"
-          f << "skin.name=1080x1920\n"
-        }
+        if params[:avd_configuration]
+          UI.message("Override configuration")
+          config_file = "#{Dir.home}/.android/avd/#{params[:name]}.avd/config.ini"
+          config = {}
+          File.readlines(config_file).each do |entry|
+            key_and_value = entry.strip.split("=")
+            config[key_and_value.first] = key_and_value.last
+          end
+
+          config.merge!(params[:avd_configuration])
+          File.open(config_file, 'w') do |file|
+            config.each_pair do |k,v|
+              file.write("#{k}=#{v}\n")
+            end
+            file.flush
+            file.close
+          end
+        end
 
         # Verify HAXM installed on mac
         if FastlaneCore::Helper.mac?
@@ -39,10 +50,9 @@ module Fastlane
         end
 
         UI.message("Starting emulator")
-        system("LC_NUMERIC=C; #{sdk_dir}/tools/emulator @#{params[:name]} > /dev/null 2>&1 &")
+        system("LC_NUMERIC=C; #{sdk_dir}/emulator/emulator @#{params[:name]} > /dev/null 2>&1 &")
         sh("#{adb} -e wait-for-device")
-
-        until Actions.sh("#{adb} -e shell getprop init.svc.bootanim", log: false).include? "stopped" do
+        until Actions.sh("#{adb} -e shell getprop dev.bootcomplete", log: false).strip == "1" do
           sleep(5)
         end
 
@@ -69,10 +79,18 @@ module Fastlane
       def self.example_code
         [
           'android_emulator(
+            device: "Nexus 5",
             location: "9.1808 48.7771",
             package: "system-images;android-24;google_apis;x86_64",
             demo_mode: true,
-            sdk_dir: "PATH_TO_SDK"
+            sdk_dir: "PATH_TO_SDK",
+            avd_configuration: {
+              "hw.gpu.mode" => "auto",
+              "hw.gpu.enabled" => "yes",
+              "skin.dynamic" => "yes",
+              "skin.name" => "nexus_9",
+              "skin.path" => "/Users/#{`whoami`.strip}/Library/Android/sdk/skins/nexus_9"
+            }
           )'
         ]
       end
@@ -96,6 +114,11 @@ module Fastlane
                                        description: "Name of the AVD",
                                        default_value: "fastlane",
                                        optional: false),
+          FastlaneCore::ConfigItem.new(key: :device,
+                                       env_name: "AVD_DEVICE",
+                                       description: "Device",
+                                       default_value: "Nexus 5",
+                                       optional: false),
           FastlaneCore::ConfigItem.new(key: :location,
                                        env_name: "AVD_LOCATION",
                                        description: "Set location of the the emulator '<longitude> <latitude>'",
@@ -104,7 +127,12 @@ module Fastlane
                                        env_name: "AVD_DEMO_MODE",
                                        description: "Set the emulator in demo mode",
                                        is_string: false,
-                                       default_value: true)
+                                       default_value: true),
+          FastlaneCore::ConfigItem.new(key: :avd_configuration,
+                                       env_name: "AVD_CONFIGURATION",
+                                       description: "AVD Configuration",
+                                       is_string: false,
+                                       optional: true)
         ]
       end
 
