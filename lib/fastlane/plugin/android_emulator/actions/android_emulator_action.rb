@@ -51,6 +51,7 @@ module Fastlane
 
         UI.message("Starting emulator")
         system("LC_NUMERIC=C; #{sdk_dir}/emulator/emulator @#{params[:name]} > /dev/null 2>&1 &")
+        sleep(5)
         sh("#{adb} -e wait-for-device")
         until Actions.sh("#{adb} -e shell getprop dev.bootcomplete", log: false).strip == "1" do
           sleep(5)
